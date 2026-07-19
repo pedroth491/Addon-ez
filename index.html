@@ -256,6 +256,12 @@
       <input type="file" id="newImageFile" accept="image/*">
     </div>
     <div class="imgPreview" id="imgPreview">sem imagem ainda</div>
+    
+    <label>Arquivo do Addon (.mcaddon, .mcpack, .zip)</label>
+    <div class="fileRow">
+      <input type="file" id="newAddonFile" accept=".mcaddon,.mcpack,.zip,.rar">
+    </div>
+
     <button class="authBtn" id="saveNewAddon">Salvar</button>
     <button class="authBtn secondary" id="cancelNewAddon">Cancelar</button>
   </div>
@@ -267,6 +273,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-storage-compat.js"></script>
 
 <script>
 (function(){
@@ -334,6 +341,7 @@
   firebase.initializeApp(firebaseConfig);
   const auth = firebase.auth();
   const db = firebase.firestore();
+  const storage = firebase.storage();
 
   let currentUser = null;      // { uid, email, isAdmin }
   let adminUid = null;         // uid do admin (vem de meta/adminConfig)
@@ -474,199 +482,4 @@
   }
 
   function render() {
-    const grid = document.getElementById('grid');
-    const emptyMsg = document.getElementById('emptyMsg');
-    grid.innerHTML = '';
-
-    let list = addonsCache;
-    if (filter === 'saved') list = addonsCache.filter(a => favIds.includes(a.id));
-
-    if (list.length === 0) {
-      emptyMsg.style.display = 'block';
-      emptyMsg.textContent = filter === 'saved'
-        ? 'Você ainda não salvou nenhum addon.'
-        : 'Nenhum addon cadastrado ainda.';
-      return;
-    }
-    emptyMsg.style.display = 'none';
-
-    list.forEach(a => {
-      const isSaved = favIds.includes(a.id);
-      const card = document.createElement('div');
-      card.className = 'card';
-      const thumbStyle = a.image ? `style="background-image:url('${a.image}')"` : '';
-      card.innerHTML = `
-        <div class="thumb" ${thumbStyle}>${a.image ? '' : (a.icon || '📦')}</div>
-        <h3>${escapeHtml(a.title)}</h3>
-        <div class="meta">⬇️ ${(a.downloads || 0).toLocaleString('pt-BR')} downloads</div>
-        <div class="desc">${escapeHtml(a.desc || '')}</div>
-        <div class="cardActions">
-          <button class="saveBtn ${isSaved ? 'saved' : ''}" data-action="save" data-id="${a.id}">
-            ${isSaved ? '★ Salvo' : '☆ Salvar'}
-          </button>
-          <button class="dlBtn" data-action="download" data-id="${a.id}">⬇ Baixar</button>
-        </div>
-        ${currentUser.isAdmin ? `
-        <div class="adminRow">
-          <button class="editBtn" data-action="edit" data-id="${a.id}">✏️ Editar</button>
-          <button class="removeBtn" data-action="remove" data-id="${a.id}">🗑 Remover</button>
-        </div>` : ''}
-      `;
-      grid.appendChild(card);
-    });
-  }
-
-  function escapeHtml(str) {
-    return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  }
-
-  document.getElementById('grid').addEventListener('click', async (e) => {
-    const btn = e.target.closest('button');
-    if (!btn) return;
-    const id = btn.dataset.id;
-    const action = btn.dataset.action;
-
-    if (action === 'save') {
-      const favDocId = currentUser.uid + '_' + id;
-      const favRef = db.collection('favorites').doc(favDocId);
-      if (favIds.includes(id)) {
-        await favRef.delete();
-      } else {
-        await favRef.set({ uid: currentUser.uid, addonId: id });
-      }
-    }
-
-    if (action === 'download') {
-      const addon = addonsCache.find(a => a.id === id);
-      downloadFakeAddon(addon);
-      db.collection('addons').doc(id).update({
-        downloads: firebase.firestore.FieldValue.increment(1)
-      }).catch(()=>{});
-    }
-
-    if (action === 'edit' && currentUser.isAdmin) {
-      const addon = addonsCache.find(a => a.id === id);
-      openModal(addon);
-    }
-
-    if (action === 'remove' && currentUser.isAdmin) {
-      try {
-        await db.collection('addons').doc(id).delete();
-        showToast('Addon removido.');
-      } catch (err) {
-        showToast('Erro ao remover: ' + err.message);
-      }
-    }
-  });
-
-  function downloadFakeAddon(addon) {
-    const content = `Este é um arquivo de demonstração (FAKE) do addon "${addon.title}".\n` +
-      `Descrição: ${addon.desc}\n\nNa versão real, aqui viria o pacote .mcaddon de verdade.`;
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = addon.title.replace(/\s+/g, '_') + '_FAKE.txt';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    showToast('Download de demonstração iniciado (arquivo fake).');
-  }
-
-  // -------- Modal adicionar/editar addon --------
-  const modalBg = document.getElementById('modalBg');
-  const modalTitle = document.getElementById('modalTitle');
-  const newTitle = document.getElementById('newTitle');
-  const newDesc = document.getElementById('newDesc');
-  const newIcon = document.getElementById('newIcon');
-  const newImageUrl = document.getElementById('newImageUrl');
-  const newImageFile = document.getElementById('newImageFile');
-  const imgPreview = document.getElementById('imgPreview');
-  let pendingImageData = '';
-
-  function openModal(addon) {
-    editingId = addon ? addon.id : null;
-    modalTitle.textContent = addon ? 'Editar addon' : 'Novo addon';
-    newTitle.value = addon ? addon.title : '';
-    newDesc.value = addon ? addon.desc : '';
-    newIcon.value = addon ? addon.icon : '';
-    newImageUrl.value = addon && addon.image && !addon.image.startsWith('data:') ? addon.image : '';
-    pendingImageData = addon && addon.image && addon.image.startsWith('data:') ? addon.image : '';
-    newImageFile.value = '';
-    updatePreview(addon ? addon.image : '');
-    modalBg.style.display = 'flex';
-  }
-
-  function updatePreview(src) {
-    if (src) {
-      imgPreview.style.backgroundImage = `url('${src}')`;
-      imgPreview.textContent = '';
-    } else {
-      imgPreview.style.backgroundImage = 'none';
-      imgPreview.textContent = 'sem imagem ainda';
-    }
-  }
-
-  newImageUrl.addEventListener('input', () => {
-    pendingImageData = '';
-    updatePreview(newImageUrl.value.trim());
-  });
-  newImageFile.addEventListener('change', () => {
-    const file = newImageFile.files[0];
-    if (!file) return;
-    if (file.size > 700 * 1024) {
-      showToast('Imagem muito grande (máx. ~700KB). Tenta uma menor ou usa um link.');
-      newImageFile.value = '';
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      pendingImageData = reader.result;
-      newImageUrl.value = '';
-      updatePreview(pendingImageData);
-    };
-    reader.readAsDataURL(file);
-  });
-
-  document.getElementById('addBtn').addEventListener('click', () => openModal(null));
-  document.getElementById('cancelNewAddon').addEventListener('click', () => modalBg.style.display = 'none');
-
-  document.getElementById('saveNewAddon').addEventListener('click', async () => {
-    const title = newTitle.value.trim();
-    const desc = newDesc.value.trim();
-    const icon = newIcon.value.trim() || '📦';
-    const image = pendingImageData || newImageUrl.value.trim();
-    if (!title) return;
-
-    try {
-      if (editingId) {
-        await db.collection('addons').doc(editingId).update({
-          title, desc: desc || 'Sem descrição.', icon, image
-        });
-        showToast('Addon atualizado!');
-      } else {
-        await db.collection('addons').add({
-          title, desc: desc || 'Sem descrição.', icon, image, downloads: 0,
-          createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        showToast('Addon adicionado!');
-      }
-      modalBg.style.display = 'none';
-    } catch (err) {
-      showToast('Erro ao salvar: ' + err.message);
-    }
-  });
-
-  function showToast(msg) {
-    const t = document.getElementById('toast');
-    t.textContent = msg;
-    t.style.display = 'block';
-    clearTimeout(t._timeout);
-    t._timeout = setTimeout(() => t.style.display = 'none', 2600);
-  }
-})();
-</script>
-
-</body>
-</html>
+    const grid = d   const grid = 
