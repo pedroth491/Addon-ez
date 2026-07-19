@@ -256,12 +256,8 @@
       <input type="file" id="newImageFile" accept="image/*">
     </div>
     <div class="imgPreview" id="imgPreview">sem imagem ainda</div>
-    
-    <label>Arquivo do Addon (.mcaddon, .mcpack, .zip)</label>
-    <div class="fileRow">
-      <input type="file" id="newAddonFile" accept=".mcaddon,.mcpack,.zip,.rar">
-    </div>
-
+    <label>Link de download (Mediafire, Google Drive, Mega, etc.)</label>
+    <input id="newAddonLink" placeholder="https://www.mediafire.com/file/...">
     <button class="authBtn" id="saveNewAddon">Salvar</button>
     <button class="authBtn secondary" id="cancelNewAddon">Cancelar</button>
   </div>
@@ -273,7 +269,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-storage-compat.js"></script>
 
 <script>
 (function(){
@@ -341,7 +336,6 @@
   firebase.initializeApp(firebaseConfig);
   const auth = firebase.auth();
   const db = firebase.firestore();
-  const storage = firebase.storage();
 
   let currentUser = null;      // { uid, email, isAdmin }
   let adminUid = null;         // uid do admin (vem de meta/adminConfig)
@@ -482,4 +476,9 @@
   }
 
   function render() {
-    const grid = d   const grid = 
+    const grid = document.getElementById('grid');
+    const emptyMsg = document.getElementById('emptyMsg');
+    grid.innerHTML = '';
+
+    let list = addonsCache;
+    if (filter === '
